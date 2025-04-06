@@ -3,7 +3,6 @@ import {StyleSheet} from 'react-native'
 import {SafeAreaView} from 'react-native-safe-area-context'
 import {
   AppBskyActorDefs,
-  AppBskyGraphGetActorStarterPacks,
   moderateProfile,
   ModerationOpts,
   RichText as RichTextAPI,
@@ -11,11 +10,7 @@ import {
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 import {useFocusEffect} from '@react-navigation/native'
-import {
-  InfiniteData,
-  UseInfiniteQueryResult,
-  useQueryClient,
-} from '@tanstack/react-query'
+import {useQueryClient} from '@tanstack/react-query'
 
 import {useSetTitle} from '#/lib/hooks/useSetTitle'
 import {ComposeIcon2} from '#/lib/icons'
@@ -27,7 +22,6 @@ import {colors, s} from '#/lib/styles'
 import {useProfileShadow} from '#/state/cache/profile-shadow'
 import {listenSoftReset} from '#/state/events'
 import {useModerationOpts} from '#/state/preferences/moderation-opts'
-import {useActorStarterPacksQuery} from '#/state/queries/actor-starter-packs'
 import {useLabelerInfoQuery} from '#/state/queries/labeler'
 import {resetProfilePostsQueries} from '#/state/queries/post-feed'
 import {useProfileQuery} from '#/state/queries/profile'
@@ -86,7 +80,6 @@ function ProfileScreenInner({route}: Props) {
   } = useProfileQuery({
     did: resolvedDid,
   })
-  const starterPacksQuery = useActorStarterPacksQuery({did: resolvedDid})
 
   const onPressTryAgain = React.useCallback(() => {
     if (resolveError) {
@@ -114,7 +107,7 @@ function ProfileScreenInner({route}: Props) {
   }, [queryClient, profile?.viewer?.blockedBy, resolvedDid])
 
   // Most pushes will happen here, since we will have only placeholder data
-  if (isLoadingDid || isLoadingProfile || starterPacksQuery.isLoading) {
+  if (isLoadingDid || isLoadingProfile) {
     return (
       <Layout.Content>
         <ProfileHeaderLoading />
@@ -138,7 +131,6 @@ function ProfileScreenInner({route}: Props) {
     return (
       <ProfileScreenLoaded
         profile={profile}
-        starterPacksQuery={starterPacksQuery}
         moderationOpts={moderationOpts}
         isPlaceholderProfile={isPlaceholderProfile}
         hideBackButton={!!route.params.hideBackButton}
@@ -164,16 +156,11 @@ function ProfileScreenLoaded({
   isPlaceholderProfile,
   moderationOpts,
   hideBackButton,
-  starterPacksQuery,
 }: {
   profile: AppBskyActorDefs.ProfileViewDetailed
   moderationOpts: ModerationOpts
   hideBackButton: boolean
   isPlaceholderProfile: boolean
-  starterPacksQuery: UseInfiniteQueryResult<
-    InfiniteData<AppBskyGraphGetActorStarterPacks.OutputSchema, unknown>,
-    Error
-  >
 }) {
   const profile = useProfileShadow(profileUnshadowed)
   const {hasSession, currentAccount} = useSession()
@@ -195,6 +182,7 @@ function ProfileScreenLoaded({
   const postsSectionRef = React.useRef<SectionRef>(null)
   const repliesSectionRef = React.useRef<SectionRef>(null)
   const mediaSectionRef = React.useRef<SectionRef>(null)
+  const videosSectionRef = React.useRef<SectionRef>(null)
   const likesSectionRef = React.useRef<SectionRef>(null)
   const feedsSectionRef = React.useRef<SectionRef>(null)
   const listsSectionRef = React.useRef<SectionRef>(null)
@@ -218,12 +206,15 @@ function ProfileScreenLoaded({
   const showPostsTab = true
   const showRepliesTab = hasSession
   const showMediaTab = !hasLabeler
+  const showVideosTab = !hasLabeler
   const showLikesTab = isMe
-  const showFeedsTab = isMe || (profile.associated?.feedgens || 0) > 0
-  const showStarterPacksTab =
-    isMe || !!starterPacksQuery.data?.pages?.[0].starterPacks.length
-  const showListsTab =
-    hasSession && (isMe || (profile.associated?.lists || 0) > 0)
+  const feedGenCount = profile.associated?.feedgens || 0
+  const showFeedsTab = isMe || feedGenCount > 0
+  const starterPackCount = profile.associated?.starterPacks || 0
+  const showStarterPacksTab = isMe || starterPackCount > 0
+  // subtract starterpack count from list count, since starterpacks are a type of list
+  const listCount = (profile.associated?.lists || 0) - starterPackCount
+  const showListsTab = hasSession && (isMe || listCount > 0)
 
   const sectionTitles = [
     showFiltersTab ? _(msg`Labels`) : undefined,
@@ -231,6 +222,7 @@ function ProfileScreenLoaded({
     showPostsTab ? _(msg`Posts`) : undefined,
     showRepliesTab ? _(msg`Replies`) : undefined,
     showMediaTab ? _(msg`Media`) : undefined,
+    showVideosTab ? _(msg`Videos`) : undefined,
     showLikesTab ? _(msg`Likes`) : undefined,
     showFeedsTab ? _(msg`Feeds`) : undefined,
     showStarterPacksTab ? _(msg`Starter Packs`) : undefined,
@@ -242,6 +234,7 @@ function ProfileScreenLoaded({
   let postsIndex: number | null = null
   let repliesIndex: number | null = null
   let mediaIndex: number | null = null
+  let videosIndex: number | null = null
   let likesIndex: number | null = null
   let feedsIndex: number | null = null
   let starterPacksIndex: number | null = null
@@ -257,6 +250,9 @@ function ProfileScreenLoaded({
   }
   if (showMediaTab) {
     mediaIndex = nextIndex++
+  }
+  if (showVideosTab) {
+    videosIndex = nextIndex++
   }
   if (showLikesTab) {
     likesIndex = nextIndex++
@@ -281,6 +277,8 @@ function ProfileScreenLoaded({
         repliesSectionRef.current?.scrollToTop()
       } else if (index === mediaIndex) {
         mediaSectionRef.current?.scrollToTop()
+      } else if (index === videosIndex) {
+        videosSectionRef.current?.scrollToTop()
       } else if (index === likesIndex) {
         likesSectionRef.current?.scrollToTop()
       } else if (index === feedsIndex) {
@@ -296,6 +294,7 @@ function ProfileScreenLoaded({
       postsIndex,
       repliesIndex,
       mediaIndex,
+      videosIndex,
       likesIndex,
       feedsIndex,
       listsIndex,
@@ -435,6 +434,19 @@ function ProfileScreenLoaded({
               />
             )
           : null}
+        {showVideosTab
+          ? ({headerHeight, isFocused, scrollElRef}) => (
+              <ProfileFeedSection
+                ref={videosSectionRef}
+                feed={`author|${profile.did}|posts_with_video`}
+                headerHeight={headerHeight}
+                isFocused={isFocused}
+                scrollElRef={scrollElRef as ListRef}
+                ignoreFilterFor={profile.did}
+                setScrollViewTag={setScrollViewTag}
+              />
+            )
+          : null}
         {showLikesTab
           ? ({headerHeight, isFocused, scrollElRef}) => (
               <ProfileFeedSection
@@ -464,8 +476,8 @@ function ProfileScreenLoaded({
           ? ({headerHeight, isFocused, scrollElRef}) => (
               <ProfileStarterPacks
                 ref={starterPacksSectionRef}
+                did={profile.did}
                 isMe={isMe}
-                starterPacksQuery={starterPacksQuery}
                 scrollElRef={scrollElRef as ListRef}
                 headerOffset={headerHeight}
                 enabled={isFocused}
