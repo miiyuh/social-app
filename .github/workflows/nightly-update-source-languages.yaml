@@ -46,4 +46,4 @@ jobs:
           push_sources: false
           create_pull_request: false
         env:
-          CROWDIN_PERSONAL_TOKEN: ${{ secrets.7c5ab1e03f93aa33b43983fc184d5a93884e7dd1128dbf7cdb8fcaed4bf3a395d321d6ec013edbad }}
+          CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
