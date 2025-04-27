@@ -45,4 +45,4 @@ jobs:
           push_translations: false
           push_sources: false
           create_pull_request: false
-          api_token: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
+          token: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
